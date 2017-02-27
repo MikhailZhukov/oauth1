@@ -137,36 +137,46 @@ func ParseAuthorizationCallback(req *http.Request) (requestToken, verifier strin
 // credentials).
 // See RFC 5849 2.3 Token Credentials.
 func (c *Config) AccessToken(requestToken, requestSecret, verifier string) (accessToken, accessSecret string, err error) {
+	accessToken, accessSecret, _, err = c.AccessTokenWithInfo(requestToken, requestSecret, verifier)
+	return accessToken, accessSecret, err
+}
+
+// AccessTokenWithInfo obtains an access token (token credential) by POSTing a
+// request (with oauth_token and oauth_verifier in the auth header) to the
+// Endpoint AccessTokenURL. Returns the access token and secret (token
+// credentials), and additional info (e.g. user id or name)
+// See RFC 5849 2.3 Token Credentials.
+func (c *Config) AccessTokenWithInfo(requestToken, requestSecret, verifier string) (accessToken, accessSecret string, info url.Values, err error) {
 	req, err := http.NewRequest("POST", c.Endpoint.AccessTokenURL, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", url.Values{}, err
 	}
 	err = newAuther(c).setAccessTokenAuthHeader(req, requestToken, requestSecret, verifier)
 	if err != nil {
-		return "", "", err
+		return "", "", url.Values{}, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", url.Values{}, err
 	}
 	// when err is nil, resp contains a non-nil resp.Body which must be closed
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", "", fmt.Errorf("oauth1: Server returned status %d", resp.StatusCode)
+		return "", "", url.Values{}, fmt.Errorf("oauth1: Server returned status %d", resp.StatusCode)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", err
+		return "", "", url.Values{}, err
 	}
 	// ParseQuery to decode URL-encoded application/x-www-form-urlencoded body
 	values, err := url.ParseQuery(string(body))
 	if err != nil {
-		return "", "", err
+		return "", "", url.Values{}, err
 	}
 	accessToken = values.Get(oauthTokenParam)
 	accessSecret = values.Get(oauthTokenSecretParam)
 	if accessToken == "" || accessSecret == "" {
-		return "", "", errors.New("oauth1: Response missing oauth_token or oauth_token_secret")
+		return "", "", url.Values{}, errors.New("oauth1: Response missing oauth_token or oauth_token_secret")
 	}
-	return accessToken, accessSecret, nil
+	return accessToken, accessSecret, values, nil
 }
